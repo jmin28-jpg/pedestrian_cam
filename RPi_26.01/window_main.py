@@ -578,6 +578,14 @@ class WindowSum(QMainWindow):
             'layout': main_stack
         }
         
+        # [Commit ROI-FIX-1] VideoWidget 생성 직후 ROI 캐시 적용 (레이스 해결)
+        if key in self.roi_cache:
+            try:
+                self.roi_apply_to_video(key)
+                logger.info(f"[ROI] Applied cached ROI to {key} during tile creation")
+            except Exception as e:
+                logger.warning(f"[ROI] Failed to apply cached ROI for {key}: {e}")
+        
         # 서브타입 설정 (set_media 호출 전)
         if subtype is not None:
             video_widget.set_subtype(subtype)

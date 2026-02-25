@@ -33,11 +33,8 @@ except Exception as e:
 # -----------------------
 # Cairo Import (optional)
 # -----------------------
-try:
-    import cairo  # noqa: F401
-    HAS_CAIRO = True
-except Exception:
-    HAS_CAIRO = False
+# [Commit ROI-VID-1] pycairo 의존 제거. cairooverlay element 존재 여부로 판단.
+HAS_CAIRO = True
 
 
 def _env_int(name: str, default: int) -> int:
@@ -535,15 +532,20 @@ class VideoWidget(QWidget):
         cairo_overlay = None
         vc_after_ov = None
 
-        if enable_overlay and HAS_CAIRO:
+        if enable_overlay:
             # videoconvert -> cairooverlay -> videoconvert 구조로 호환성 확보
             vc_before_ov = Gst.ElementFactory.make("videoconvert", f"vc_pre_ov_{self.camera_key}")
             cairo_overlay = Gst.ElementFactory.make("cairooverlay", f"overlay_{self.camera_key}")
             vc_after_ov = Gst.ElementFactory.make("videoconvert", f"vc_post_ov_{self.camera_key}")
-            cairo_overlay.connect("draw", self._on_draw_overlay)
-            logger.info(f"[VideoWidget][{self.camera_key}] CairoOverlay created + inserted in video chain")
-        else:
-            logger.info(f"[VideoWidget][{self.camera_key}] CairoOverlay: DISABLED (HAS_CAIRO={HAS_CAIRO})")
+            
+            if cairo_overlay is None:
+                logger.warning(f"[VideoWidget][{self.camera_key}] CairoOverlay element not available. ROI overlay disabled.")
+                cairo_overlay = None
+                vc_before_ov = None
+                vc_after_ov = None
+            else:
+                cairo_overlay.connect("draw", self._on_draw_overlay)
+                logger.info(f"[VideoWidget][{self.camera_key}] CairoOverlay created + inserted in video chain")
 
         # sink
         sink = _pick_best_sink(self.camera_key)
