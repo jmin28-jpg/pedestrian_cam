@@ -18,3 +18,13 @@ RPi2_26.02/
 *.whl
 .venv/
 .env
+
+
+# 강제로 추가하기
+# git add -f [파일명]
+
+# '백업' 폴더 전체를 무시하지만
+# 백업/
+
+# '백업' 폴더 안의 'important.txt'는 제외하지 마라
+# !백업/important.txt
