@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+*.zip
+
+
+
+# 특정 폴더 제외
+백업/
+dll/
+gpiotest/
+1121/
+sindorico/
+RPi2_26.02/
+
+# 모든 zip 파일 제외
+*.zip
+*.txt
+*.whl
+.venv/
+.env
