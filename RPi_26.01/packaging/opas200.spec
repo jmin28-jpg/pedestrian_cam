@@ -12,6 +12,9 @@ block_cipher = None
 # PySide6 관련 파일 자동 수집
 datas_pyside, binaries_pyside, hiddenimports_pyside = collect_all('PySide6')
 
+# [STEP 2] pycairo 바이너리 및 의존성 강제 수집
+datas_cairo, binaries_cairo, hiddenimports_cairo = collect_all('cairo')
+
 # GStreamer 및 GI 관련 Hidden Imports
 hiddenimports = [
     'gi', 
@@ -21,13 +24,12 @@ hiddenimports = [
     'gi.repository.Gio',
     'gi.repository.GstVideo',
     'cairo',
-] + hiddenimports_pyside
+] + hiddenimports_pyside + hiddenimports_cairo
 
 # build_bundle 폴더를 실행파일 내부에 포함
 datas = [
-    (str(PROJECT_ROOT / 'config.ini'), 'defaults'),
     (str(PROJECT_ROOT / 'build_bundle'), 'build_bundle'),
-] + datas_pyside
+] + datas_pyside + datas_cairo
 
 # 런타임 훅 등록 (Analysis에서 설정)
 
@@ -78,7 +80,7 @@ excludes = [
 a = Analysis(
     [str(PROJECT_ROOT / 'main.py')],
     pathex=[str(PROJECT_ROOT)],
-    binaries=binaries_pyside,
+    binaries=binaries_pyside + binaries_cairo,
     datas=datas,
     hiddenimports=hiddenimports + [
         "window_main","window_ui","video_ui","cgi_client","db_module",

@@ -14,7 +14,10 @@ SYSTEM_LIB_DIRS = [
     "/lib"
 ]
 GST_PLUGIN_SYSTEM_DIR = Path("/usr/lib/aarch64-linux-gnu/gstreamer-1.0")
-GI_TYPELIB_SYSTEM_DIR = Path("/usr/lib/aarch64-linux-gnu/girepository-1.0")
+GI_TYPELIB_SEARCH_PATHS = [
+    Path("/usr/lib/aarch64-linux-gnu/girepository-1.0"),
+    Path("/usr/lib/girepository-1.0"),
+]
 
 # glibc 버전 호환성 문제를 피하기 위해 기본 시스템 라이브러리는 제외 (타겟 OS에 존재한다고 가정)
 EXCLUDE_LIBS = {
@@ -80,21 +83,39 @@ def collect_deps():
     # 1. GStreamer Plugins 수집
     logger.info(f"Collecting GStreamer plugins from {GST_PLUGIN_SYSTEM_DIR}")
     if GST_PLUGIN_SYSTEM_DIR.exists():
+        has_cairo_plugin = False
         for f in GST_PLUGIN_SYSTEM_DIR.glob("*.so"):
             # [Commit GST-FIX-REMOVE] Exclude gstshark/tracer plugins
             if "shark" in f.name.lower() or "tracer" in f.name.lower():
                 continue
             
+            if "cairo" in f.name.lower():
+                has_cairo_plugin = True
+                logger.info(f"Found cairo plugin: {f.name}")
+
             dest = BUILD_BUNDLE_DIR / "gst_plugins" / f.name
             shutil.copy2(f, dest)
             libs_to_process.add(f)
+        
+        if not has_cairo_plugin:
+            logger.warning("WARNING: libgstcairo.so (cairooverlay) NOT found in plugins!")
 
     # 2. GI Typelibs 수집
-    logger.info(f"Collecting GI Typelibs from {GI_TYPELIB_SYSTEM_DIR}")
-    if GI_TYPELIB_SYSTEM_DIR.exists():
-        for f in GI_TYPELIB_SYSTEM_DIR.glob("*.typelib"):
-            dest = BUILD_BUNDLE_DIR / "gi_typelib" / f.name
-            shutil.copy2(f, dest)
+    logger.info("Collecting GI Typelibs...")
+    found_cairo = False
+    for d in GI_TYPELIB_SEARCH_PATHS:
+        if d.exists():
+            logger.info(f"Scanning {d}")
+            for f in d.glob("*.typelib"):
+                dest = BUILD_BUNDLE_DIR / "gi_typelib" / f.name
+                if not dest.exists():
+                    shutil.copy2(f, dest)
+                if "cairo-1.0" in f.name:
+                    found_cairo = True
+                    logger.info(f"Found cairo typelib: {f}")
+    
+    if not found_cairo:
+        logger.warning("WARNING: cairo-1.0.typelib NOT FOUND! ROI overlay might fail.")
 
     # 3. gst-plugin-scanner 바이너리 찾기 및 복사
     scanner_path = None
