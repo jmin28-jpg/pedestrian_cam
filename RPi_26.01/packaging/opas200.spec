@@ -12,6 +12,47 @@ block_cipher = None
 # PySide6 관련 파일 자동 수집
 datas_pyside, binaries_pyside, hiddenimports_pyside = collect_all('PySide6')
 
+# [STEP 1] 불필요한 PySide6 플러그인/데이터 필터링 (용량 최적화)
+BAD_PYSIDE_PATTERNS = [
+    "WebEngine",          # QtWebEngine 폴더 및 libQt6WebEngine* 라이브러리 모두 포함
+    "libQt6WebEngine",
+    "QtDesigner",
+    "QtQml",
+    "QtQuick",
+    "QtWayland",
+    "QtMultimedia", # FFmpeg 의존성 경고 유발
+    "QtTextToSpeech",
+    "plugins/imageformats/libqwebp.so",   # WebP 이미지 포맷 플러그인 (파일명 직접 지정)
+    "plugins/imageformats/libqtiff.so",   # TIFF 이미지 포맷 플러그인 (파일명 직접 지정)
+    "plugins/designer",
+    "plugins/multimedia",
+    "plugins/wayland",
+    "plugins/qml",
+    "plugins/texttospeech",
+]
+
+def filter_collected_files(collected_files, bad_patterns, file_type):
+    kept_files = []
+    dropped_files = []
+    for item in collected_files:
+        # item은 튜플(src, dest) 또는 문자열(src)일 수 있음
+        src_path = item[0] if isinstance(item, tuple) else item
+        is_bad = any(pattern in src_path.replace("\\", "/") for pattern in bad_patterns)
+        if is_bad:
+            dropped_files.append(src_path)
+        else:
+            kept_files.append(item)
+    
+    print(f"--- Filtering PySide6 {file_type} ---")
+    print(f"Kept: {len(kept_files)}, Dropped: {len(dropped_files)}")
+    if dropped_files:
+        print(f"Dropped examples: {dropped_files[:5]}")
+    print("---------------------------------")
+    return kept_files
+
+filtered_datas_pyside = filter_collected_files(datas_pyside, BAD_PYSIDE_PATTERNS, "datas")
+filtered_binaries_pyside = filter_collected_files(binaries_pyside, BAD_PYSIDE_PATTERNS, "binaries")
+
 # [STEP 2] pycairo 바이너리 및 의존성 강제 수집
 datas_cairo, binaries_cairo, hiddenimports_cairo = collect_all('cairo')
 
@@ -29,7 +70,7 @@ hiddenimports = [
 # build_bundle 폴더를 실행파일 내부에 포함
 datas = [
     (str(PROJECT_ROOT / 'build_bundle'), 'build_bundle'),
-] + datas_pyside + datas_cairo
+] + filtered_datas_pyside + datas_cairo
 
 # 런타임 훅 등록 (Analysis에서 설정)
 
@@ -39,6 +80,8 @@ excludes = [
     'PySide6.QtWebEngineWidgets',
     'PySide6.QtWebEngineQuick',
     'PySide6.QtWebView',
+    'PySide6.QtQml',
+    'PySide6.QtQuick',
     'PySide6.QtPdf',
     'PySide6.QtPdfWidgets',
     'PySide6.QtDesigner',
@@ -50,6 +93,7 @@ excludes = [
     'PySide6.Qt3DLogic',
     'PySide6.QtTextToSpeech',
     'PySide6.QtWaylandCompositor',
+    'PySide6.QtWaylandClient',
     'PySide6.QtMultimedia',
     'PySide6.QtMultimediaWidgets',
     # 추가적으로 사용하지 않는 것이 확실한 모듈들
@@ -80,7 +124,7 @@ excludes = [
 a = Analysis(
     [str(PROJECT_ROOT / 'main.py')],
     pathex=[str(PROJECT_ROOT)],
-    binaries=binaries_pyside + binaries_cairo,
+    binaries=filtered_binaries_pyside + binaries_cairo,
     datas=datas,
     hiddenimports=hiddenimports + [
         "window_main","window_ui","video_ui","cgi_client","db_module",
