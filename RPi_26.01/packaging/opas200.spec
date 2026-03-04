@@ -9,54 +9,14 @@ PROJECT_ROOT = (SPEC_DIR / "..").resolve()
 
 block_cipher = None
 
-# PySide6 관련 파일 자동 수집
-datas_pyside, binaries_pyside, hiddenimports_pyside = collect_all('PySide6')
-
-# [STEP 1] 불필요한 PySide6 플러그인/데이터 필터링 (용량 최적화)
-BAD_PYSIDE_PATTERNS = [
-    "WebEngine",          # QtWebEngine 폴더 및 libQt6WebEngine* 라이브러리 모두 포함
-    "libQt6WebEngine",
-    "QtDesigner",
-    "QtQml",
-    "QtQuick",
-    "QtWayland",
-    "QtMultimedia", # FFmpeg 의존성 경고 유발
-    "QtTextToSpeech",
-    "plugins/imageformats/libqwebp.so",   # WebP 이미지 포맷 플러그인 (파일명 직접 지정)
-    "plugins/imageformats/libqtiff.so",   # TIFF 이미지 포맷 플러그인 (파일명 직접 지정)
-    "plugins/designer",
-    "plugins/multimedia",
-    "plugins/wayland",
-    "plugins/qml",
-    "plugins/texttospeech",
-]
-
-def filter_collected_files(collected_files, bad_patterns, file_type):
-    kept_files = []
-    dropped_files = []
-    for item in collected_files:
-        # item은 튜플(src, dest) 또는 문자열(src)일 수 있음
-        src_path = item[0] if isinstance(item, tuple) else item
-        is_bad = any(pattern in src_path.replace("\\", "/") for pattern in bad_patterns)
-        if is_bad:
-            dropped_files.append(src_path)
-        else:
-            kept_files.append(item)
-    
-    print(f"--- Filtering PySide6 {file_type} ---")
-    print(f"Kept: {len(kept_files)}, Dropped: {len(dropped_files)}")
-    if dropped_files:
-        print(f"Dropped examples: {dropped_files[:5]}")
-    print("---------------------------------")
-    return kept_files
-
-filtered_datas_pyside = filter_collected_files(datas_pyside, BAD_PYSIDE_PATTERNS, "datas")
-filtered_binaries_pyside = filter_collected_files(binaries_pyside, BAD_PYSIDE_PATTERNS, "binaries")
+# PySide6 관련 파일은 packaging/hook-PySide6.py에서 수집 및 필터링을 담당합니다.
+# 이 spec 파일에서는 collect_all('PySide6')을 직접 호출하지 않습니다.
 
 # [STEP 2] pycairo 바이너리 및 의존성 강제 수집
 datas_cairo, binaries_cairo, hiddenimports_cairo = collect_all('cairo')
 
 # GStreamer 및 GI 관련 Hidden Imports
+# PySide6의 hiddenimports는 hook-PySide6.py가 자동으로 처리합니다.
 hiddenimports = [
     'gi', 
     'gi.repository.Gst', 
@@ -65,12 +25,13 @@ hiddenimports = [
     'gi.repository.Gio',
     'gi.repository.GstVideo',
     'cairo',
-] + hiddenimports_pyside + hiddenimports_cairo
+] + hiddenimports_cairo
 
 # build_bundle 폴더를 실행파일 내부에 포함
+# PySide6의 datas는 hook-PySide6.py가 자동으로 처리합니다.
 datas = [
     (str(PROJECT_ROOT / 'build_bundle'), 'build_bundle'),
-] + filtered_datas_pyside + datas_cairo
+] + datas_cairo
 
 # 런타임 훅 등록 (Analysis에서 설정)
 
@@ -118,13 +79,20 @@ excludes = [
     'PySide6.QtUiTools',
     'PySide6.QtTest',
     'PySide6.QtSql',
-    'PySide6.QtSvgWidgets'
+    'PySide6.QtSvgWidgets',
+    # [Fix] charset_normalizer.md__mypyc hidden import 경고 제거
+    'charset_normalizer.md__mypyc',
+    # [Fix] PySide6.scripts.deploy_lib submodule collection 경고 제거
+    'PySide6.scripts.deploy_lib',
+    # [Fix] setuptools._vendor.typeguard submodule collection 경고 제거
+    'setuptools._vendor.typeguard',
 ]
 
 a = Analysis(
     [str(PROJECT_ROOT / 'main.py')],
     pathex=[str(PROJECT_ROOT)],
-    binaries=filtered_binaries_pyside + binaries_cairo,
+    # PySide6의 binaries는 hook-PySide6.py가 자동으로 처리합니다.
+    binaries=binaries_cairo,
     datas=datas,
     hiddenimports=hiddenimports + [
         "window_main","window_ui","video_ui","cgi_client","db_module",
