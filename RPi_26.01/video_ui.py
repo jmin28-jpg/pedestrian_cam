@@ -148,7 +148,7 @@ class VideoFrameLabel(QLabel):
             # [STEP 9-3] PaintEvent 진단 로그 (최초 1회)
             if not self._paint_logged:
                 self._paint_logged = True
-                logger.warning(f"[QT-OVERLAY] paintEvent first draw: pixmap={self._pixmap.width()}x{self._pixmap.height()}")
+                logger.info(f"[QT-OVERLAY] paintEvent first draw: pixmap={self._pixmap.width()}x{self._pixmap.height()}")
 
             target_rect = self.rect()
             scaled_pixmap = self._pixmap.scaled(target_rect.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
@@ -189,8 +189,8 @@ class VideoWidget(QWidget):
 
         self.setStyleSheet("background-color: black;")
 
-        # [STEP 8-1] 모드 선택 로그 강제 출력
-        logger.warning(f"[QT-OVERLAY] camera_key(init)={self.camera_key} OPAS_QT_OVERLAY={os.environ.get('OPAS_QT_OVERLAY')} use_qt_overlay={self.use_qt_overlay}")
+        # [STEP 8-1] 모드 선택 로그
+        logger.info(f"[QT-OVERLAY] camera_key(init)={self.camera_key} OPAS_QT_OVERLAY={os.environ.get('OPAS_QT_OVERLAY')} use_qt_overlay={self.use_qt_overlay}")
 
         self.rtsp_url = None
         self.desired_subtype = None # None: URL 그대로, 0: Main, 1: Sub
@@ -609,8 +609,8 @@ class VideoWidget(QWidget):
     # Pipeline builder
     # -----------------------
     def _build_pipeline(self, rtsp_url: str):
-        # [STEP 8-1] 파이프라인 빌드 로그
-        logger.warning(f"[QT-OVERLAY] [{self.camera_key}] build_pipeline use_qt_overlay={self.use_qt_overlay}")
+        # 파이프라인 빌드 로그
+        logger.info(f"[QT-OVERLAY] [{self.camera_key}] build_pipeline use_qt_overlay={self.use_qt_overlay}")
 
         self._pipeline = Gst.Pipeline.new(f"pipeline_{self.camera_key}_{_env_int('CCTV_PIPE_ID', 0)}")
         if not self._pipeline:
@@ -787,8 +787,8 @@ class VideoWidget(QWidget):
             # tail_start -> app_q -> app_vc -> app_caps -> appsink
             if not (tail_start.link(app_q) and app_q.link(app_vc) and app_vc.link(app_caps) and app_caps.link(self._appsink)):
                 raise RuntimeError("Failed to link appsink chain")
-            # [STEP 8-1] 링크 성공 로그
-            logger.warning(f"[QT-OVERLAY] [{self.camera_key}] appsink chain linked OK")
+            # 링크 성공 로그
+            logger.info(f"[QT-OVERLAY] [{self.camera_key}] appsink chain linked OK")
         else:
             if cairo_overlay:
                 self._pipeline.add(vc_before_ov)
@@ -1011,7 +1011,7 @@ class VideoWidget(QWidget):
         # 이 슬롯은 QueuedConnection으로 동작하여 GUI 스레드에서 안전하게 실행됨
         if not hasattr(self, "_frame_ready_logged"):
             self._frame_ready_logged = True
-            logger.warning(f"[QT-OVERLAY] [{self.camera_key}] _on_frame_ready first call: img size={img.width()}x{img.height()}")
+            logger.info(f"[QT-OVERLAY] [{self.camera_key}] _on_frame_ready first call: img size={img.width()}x{img.height()}")
 
         from PySide6.QtGui import QPixmap
         self.video_area.set_frame_pixmap(QPixmap.fromImage(img))
