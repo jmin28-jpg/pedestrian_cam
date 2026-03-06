@@ -150,6 +150,71 @@ def build_element_to_plugin_map_from_plugins() -> dict[str, Path]:
     logger.info(f"Built map with {len(element_map)} elements from {len(plugin_files)} plugins.")
     return element_map
 
+def run_gst_bundle_selftest(build_bundle_dir: Path):
+    logger.info("---------------------------------------------------")
+    logger.info("[SELFTEST] Verifying collected GStreamer bundle...")
+    
+    # 2) self-test 환경 구성
+    gst_plugins_dir = build_bundle_dir / "gst_plugins"
+    lib_dir = build_bundle_dir / "lib"
+    bin_dir = build_bundle_dir / "bin"
+    gi_typelib_dir = build_bundle_dir / "gi_typelib"
+    
+    env = os.environ.copy()
+    env["GST_PLUGIN_PATH_1_0"] = str(gst_plugins_dir.resolve())
+    env["GST_PLUGIN_PATH"] = str(gst_plugins_dir.resolve())
+    env["GST_PLUGIN_SYSTEM_PATH_1_0"] = ""
+    env["GST_PLUGIN_SYSTEM_PATH"] = ""
+    env["GST_PLUGIN_SCANNER"] = str((bin_dir / "gst-plugin-scanner").resolve())
+    env["GI_TYPELIB_PATH"] = str(gi_typelib_dir.resolve())
+    env["LD_LIBRARY_PATH"] = str(lib_dir.resolve())
+    
+    # 3) 필수 element 목록 검사
+    required = [
+        "rtspsrc",
+        "udpsrc",
+        "rtpjitterbuffer",
+        "decodebin",
+        "queue",
+        "videoconvert",
+        "videoscale",
+        "appsink",
+        "cairooverlay",
+        "fakesink",
+    ]
+    
+    missing = []
+    
+    # 4) 각 element 검사
+    for element in required:
+        try:
+            proc = subprocess.run(
+                ["gst-inspect-1.0", element],
+                env=env,
+                text=True,
+                capture_output=True
+            )
+            
+            if proc.returncode == 0:
+                logger.info(f"[SELFTEST] OK: {element}")
+            else:
+                err_msg = proc.stderr.strip().split('\n')[0] if proc.stderr else "No stderr"
+                logger.error(f"[SELFTEST] MISSING: {element} (Error: {err_msg})")
+                missing.append(element)
+        except Exception as e:
+            logger.error(f"[SELFTEST] EXEC FAIL: {element} ({e})")
+            missing.append(element)
+            
+    # 5) 결과 처리
+    if missing:
+        logger.error("---------------------------------------------------")
+        logger.error(f"[SELFTEST] FAILED! Missing elements: {', '.join(missing)}")
+        logger.error("The collected bundle is incomplete. Build aborted.")
+        sys.exit(1)
+    else:
+        logger.info("[SELFTEST] SUCCESS! All required elements are present.")
+        logger.info("---------------------------------------------------")
+
 def collect_deps():
     # 초기화
     if BUILD_BUNDLE_DIR.exists():
@@ -284,6 +349,9 @@ def collect_deps():
 
     size_mb = sum(f.stat().st_size for f in BUILD_BUNDLE_DIR.rglob('*') if f.is_file()) / 1024 / 1024
     logger.info(f"Collection complete. Bundle size: {size_mb:.2f} MB")
+
+    # 6) 번들 완료 후 Self-Test 수행
+    run_gst_bundle_selftest(BUILD_BUNDLE_DIR)
 
 if __name__ == "__main__":
     collect_deps()
