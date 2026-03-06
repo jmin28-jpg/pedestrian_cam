@@ -10,7 +10,7 @@ dll/
 gpiotest/
 1121/
 sindorico/
-RPi2_26.02/
+RPi2_26.03/
 
 # 모든 zip 파일 제외
 *.zip
