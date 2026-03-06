@@ -25,6 +25,23 @@ EXCLUDE_LIBS = {
     "libresolv.so.2", "libutil.so.1", "ld-linux-aarch64.so.1", "libstdc++.so.6", "libgcc_s.so.1"
 }
 
+# [최적화] 번들링할 GStreamer 요소 목록
+GST_ELEMENTS = [
+  "rtspsrc",
+  "udpsrc", # rtspsrc가 RTP/UDP 전송에 필요로 함
+  "rtph264depay","rtph265depay",
+  "h264parse","h265parse",
+  "rtpjitterbuffer", # rtspsrc가 네트워크 지터/지연 관리에 사용
+  "v4l2h264dec","v4l2h265dec",
+  "omxh264dec","omxh265dec",
+  "avdec_h264","avdec_h265",
+  "decodebin",
+  "queue","videorate","capsfilter","videoconvert","videoscale",
+  "cairooverlay","appsink",
+  "fakesink",
+  "xvimagesink","glimagesink","ximagesink","autovideosink",
+]
+
 def get_logger():
     import logging
     logging.basicConfig(level=logging.INFO, format='[Deps] %(message)s')
@@ -68,6 +85,105 @@ def get_dependencies(lib_path):
         logger.warning(f"ldd failed for {lib_path}: {e}")
     return deps
 
+def _clean_gst_env() -> dict:
+    """gst-inspect 실행을 위한 깨끗한 환경변수 설정"""
+    env = dict(os.environ)
+    # 간섭을 일으킬 수 있는 변수 제거
+    keys_to_unset = [
+        "GST_PLUGIN_PATH",
+        "GST_PLUGIN_PATH_1_0",
+        # "GST_PLUGIN_SYSTEM_PATH", # Keep this to force system path
+        "GST_REGISTRY",
+    ]
+    for k in keys_to_unset:
+        env.pop(k, None)
+    
+    # 시스템 플러그인 경로 강제 지정
+    gst_plugin_dir = "/usr/lib/aarch64-linux-gnu/gstreamer-1.0"
+    env["GST_PLUGIN_SYSTEM_PATH_1_0"] = gst_plugin_dir
+    env["GST_PLUGIN_SYSTEM_PATH"]     = gst_plugin_dir
+    
+    # 레지스트리 오염/권한 문제 방지
+    env["GST_REGISTRY_1_0"] = "/tmp/opas_gst_registry.bin"
+
+    # GST_PLUGIN_SCANNER 강제 설정
+    scanner_paths = [
+        "/usr/lib/aarch64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner",
+        "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/gst-plugin-scanner",
+        "/usr/libexec/gstreamer-1.0/gst-plugin-scanner",
+    ]
+    for p in scanner_paths:
+        if os.path.exists(p):
+            env["GST_PLUGIN_SCANNER"] = p
+            break
+
+    return env
+
+def build_element_to_plugin_map_from_plugins() -> dict[str, Path]:
+    """
+    시스템 플러그인 디렉터리의 모든 .so 파일을 검사하여
+    element -> plugin_path 매핑을 구축합니다.
+    """
+    element_map = {}
+    if not GST_PLUGIN_SYSTEM_DIR.exists():
+        logger.error(f"Plugin system dir not found: {GST_PLUGIN_SYSTEM_DIR}")
+        return element_map
+
+    logger.info(f"Scanning plugins in {GST_PLUGIN_SYSTEM_DIR}...")
+    
+    # .so 파일 목록 가져오기
+    plugin_files = list(GST_PLUGIN_SYSTEM_DIR.glob("*.so"))
+    
+    # 메타데이터 키 등 제외할 키워드
+    metadata_keys = {
+        "Name", "Description", "Filename", "Version", "License", 
+        "Source module", "Binary package", "Origin URL", "Package"
+    }
+
+    for plugin_path in plugin_files:
+        try:
+            # 각 플러그인 파일에 대해 gst-inspect-1.0 실행
+            proc = subprocess.run(
+                ["gst-inspect-1.0", str(plugin_path)],
+                text=True,
+                capture_output=True,
+                env=_clean_gst_env()
+            )
+            
+            if proc.returncode != 0:
+                # 실패 시 stderr 첫 줄만 로깅하고 건너뜀
+                err_msg = proc.stderr.strip().split('\n')[0] if proc.stderr else "No stderr"
+                # logger.debug(f"Skipping {plugin_path.name}: {err_msg}")
+                continue
+
+            # stdout 파싱
+            for line in proc.stdout.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # "Key: Value" 형태의 라인 찾기
+                if ':' in line:
+                    parts = line.split(':', 1)
+                    key = parts[0].strip()
+                    
+                    # 메타데이터 키 제외
+                    if key in metadata_keys:
+                        continue
+                    
+                    # 공백이 포함된 키는 element 이름이 아닐 가능성이 높음 (예: "Total count")
+                    if ' ' in key:
+                        continue
+                        
+                    # 유효한 element 이름으로 간주하고 매핑에 추가
+                    element_map[key] = plugin_path
+                    
+        except Exception as e:
+            logger.warning(f"Error inspecting {plugin_path.name}: {e}")
+
+    logger.info(f"Built map with {len(element_map)} elements from {len(plugin_files)} plugins.")
+    return element_map
+
 def collect_deps():
     # 초기화
     if BUILD_BUNDLE_DIR.exists():
@@ -80,25 +196,43 @@ def collect_deps():
 
     libs_to_process = set()
 
-    # 1. GStreamer Plugins 수집
-    logger.info(f"Collecting GStreamer plugins from {GST_PLUGIN_SYSTEM_DIR}")
-    if GST_PLUGIN_SYSTEM_DIR.exists():
-        has_cairo_plugin = False
-        for f in GST_PLUGIN_SYSTEM_DIR.glob("*.so"):
-            # [Commit GST-FIX-REMOVE] Exclude gstshark/tracer plugins
-            if "shark" in f.name.lower() or "tracer" in f.name.lower():
-                continue
-            
-            if "cairo" in f.name.lower():
-                has_cairo_plugin = True
-                logger.info(f"Found cairo plugin: {f.name}")
+    # 1. GStreamer Plugins 수집 (코드 기반 선별)
+    logger.info("Collecting GStreamer plugins based on required elements...")
+    
+    element_to_plugin = build_element_to_plugin_map_from_plugins()
+    
+    selected_plugins = set()
+    for element in GST_ELEMENTS:
+        plugin_path = element_to_plugin.get(element)
+        if plugin_path:
+            if plugin_path.exists():
+                selected_plugins.add(plugin_path)
+            else:
+                logger.warning(f"Plugin path from map does not exist: {plugin_path}")
+        else:
+            logger.warning(f"Element '{element}' not mapped to any plugin.")
 
-            dest = BUILD_BUNDLE_DIR / "gst_plugins" / f.name
-            shutil.copy2(f, dest)
-            libs_to_process.add(f)
+    logger.info(f"Found {len(selected_plugins)} unique plugins for {len(GST_ELEMENTS)} elements.")
+    if selected_plugins:
+        plugin_names = sorted([p.name for p in selected_plugins])
+        logger.info(f"Selected plugins: {', '.join(plugin_names[:30])}{'...' if len(plugin_names) > 30 else ''}")
+
+    has_cairo_plugin = False
+    for plugin_path in selected_plugins:
+        # shark/tracer 제외 규칙 적용
+        if "shark" in plugin_path.name.lower() or "tracer" in plugin_path.name.lower():
+            continue
+
+        if "cairo" in plugin_path.name.lower():
+            has_cairo_plugin = True
         
-        if not has_cairo_plugin:
-            logger.warning("WARNING: libgstcairo.so (cairooverlay) NOT found in plugins!")
+        dest = BUILD_BUNDLE_DIR / "gst_plugins" / plugin_path.name
+        if not dest.exists():
+            shutil.copy2(plugin_path, dest)
+        libs_to_process.add(plugin_path)
+
+    if not has_cairo_plugin:
+        logger.warning("WARNING: cairooverlay plugin was not found among selected elements!")
 
     # 2. GI Typelibs 수집
     logger.info("Collecting GI Typelibs...")
@@ -164,7 +298,7 @@ def collect_deps():
         processed_libs.add(current_lib)
         
         # 플러그인이나 스캐너 자체가 아닌 경우, lib 폴더로 복사
-        is_plugin = current_lib.parent == GST_PLUGIN_SYSTEM_DIR
+        is_plugin = current_lib in selected_plugins
         is_scanner = current_lib == scanner_path
         
         if not is_plugin and not is_scanner:

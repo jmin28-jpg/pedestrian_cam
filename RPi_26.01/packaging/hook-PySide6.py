@@ -1,7 +1,6 @@
 from PyInstaller.utils.hooks import (
     collect_data_files,
     collect_dynamic_libs,
-    collect_submodules,
 )
 
 # PySide6에서 제외할 플러그인/데이터 패턴 목록
@@ -40,16 +39,13 @@ def filter_collected_files(collected_files, bad_patterns):
 datas = collect_data_files("PySide6")
 binaries = collect_dynamic_libs("PySide6")
 
-# hiddenimports는 submodule 수집을 하되, scripts.deploy_lib는 아예 제외해서 import 시도 방지
-def _hi_filter(name: str) -> bool:
-    # PySide6.scripts.deploy_lib 및 PySide6.scripts.* 를 제외 (안전하게 넓게 차단)
-    if name == "PySide6.scripts.deploy_lib":
-        return False
-    if name.startswith("PySide6.scripts."):
-        return False
-    return True
-
-hiddenimports = collect_submodules("PySide6", filter=_hi_filter)
+# [최적화] hiddenimports 과수집 중단. 실제 사용하는 모듈만 명시적으로 포함.
+hiddenimports = [
+    "PySide6.QtCore",
+    "PySide6.QtGui",
+    "PySide6.QtWidgets",
+    "shiboken6",
+]
 
 # 수집된 datas와 binaries에서 불필요한 파일 필터링
 datas = filter_collected_files(datas, BAD_PYSIDE_PATTERNS)
