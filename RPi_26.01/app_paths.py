@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 
 APP_NAME = "OPAS-200"
@@ -6,12 +7,14 @@ DATA_ROOT_NAME = "OPAS-200_data"
 
 def get_desktop_dir():
     return Path("/home/admin/Desktop")
-
+#폴더명은 자유, 저장 이름은 항상 고정
 def get_app_home():
-    return get_desktop_dir()
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return get_desktop_dir() / "OPAS-200"
 
 def get_data_root():
-    return get_desktop_dir() / DATA_ROOT_NAME
+    return get_app_home() / DATA_ROOT_NAME
 
 def get_data_dir():
     return get_data_root() / "data"

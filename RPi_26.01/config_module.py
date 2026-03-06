@@ -20,10 +20,9 @@ class ConfigManager:
         self.config = configparser.ConfigParser()
 
     def _get_user_config_path(self):
-        home = Path.home()
-        cfg_dir = home / ".opas200"
-        cfg_dir.mkdir(parents=True, exist_ok=True)
-        return cfg_dir / "config.ini"
+        path = app_paths.get_app_home() / "config.ini"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
 
     def _get_embedded_default_config(self):
         if getattr(sys, "_MEIPASS", None):
