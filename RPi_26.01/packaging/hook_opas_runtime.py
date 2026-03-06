@@ -47,6 +47,6 @@ if base_dir:
         "GST_DEBUG_FILE",
         "GST_SHARK_CTF_PATH",
         "GST_SHARK_LOCATION",
-        "GSTSHARK",
+        "GST_SHARK",
     ]:
         os.environ.pop(k, None)

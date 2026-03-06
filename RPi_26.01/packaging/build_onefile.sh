@@ -1,11 +1,6 @@
 #!/bin/bash
 set -e
 
-# Prevent gst-shark tracer directory creation during build
-unset GST_TRACERS
-unset GST_SHARK
-unset GST_DEBUG_DUMP_DOT_DIR
-
 # [PKG-FIX-2] Ensure running from packaging directory
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"

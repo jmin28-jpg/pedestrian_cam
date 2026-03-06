@@ -13,6 +13,7 @@ SYSTEM_LIB_DIRS = [
     "/usr/lib",
     "/lib"
 ]
+
 GST_PLUGIN_SYSTEM_DIR = Path("/usr/lib/aarch64-linux-gnu/gstreamer-1.0")
 GI_TYPELIB_SEARCH_PATHS = [
     Path("/usr/lib/aarch64-linux-gnu/girepository-1.0"),
@@ -85,40 +86,6 @@ def get_dependencies(lib_path):
         logger.warning(f"ldd failed for {lib_path}: {e}")
     return deps
 
-def _clean_gst_env() -> dict:
-    """gst-inspect 실행을 위한 깨끗한 환경변수 설정"""
-    env = dict(os.environ)
-    # 간섭을 일으킬 수 있는 변수 제거
-    keys_to_unset = [
-        "GST_PLUGIN_PATH",
-        "GST_PLUGIN_PATH_1_0",
-        # "GST_PLUGIN_SYSTEM_PATH", # Keep this to force system path
-        "GST_REGISTRY",
-    ]
-    for k in keys_to_unset:
-        env.pop(k, None)
-    
-    # 시스템 플러그인 경로 강제 지정
-    gst_plugin_dir = "/usr/lib/aarch64-linux-gnu/gstreamer-1.0"
-    env["GST_PLUGIN_SYSTEM_PATH_1_0"] = gst_plugin_dir
-    env["GST_PLUGIN_SYSTEM_PATH"]     = gst_plugin_dir
-    
-    # 레지스트리 오염/권한 문제 방지
-    env["GST_REGISTRY_1_0"] = "/tmp/opas_gst_registry.bin"
-
-    # GST_PLUGIN_SCANNER 강제 설정
-    scanner_paths = [
-        "/usr/lib/aarch64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner",
-        "/usr/lib/aarch64-linux-gnu/gstreamer-1.0/gst-plugin-scanner",
-        "/usr/libexec/gstreamer-1.0/gst-plugin-scanner",
-    ]
-    for p in scanner_paths:
-        if os.path.exists(p):
-            env["GST_PLUGIN_SCANNER"] = p
-            break
-
-    return env
-
 def build_element_to_plugin_map_from_plugins() -> dict[str, Path]:
     """
     시스템 플러그인 디렉터리의 모든 .so 파일을 검사하여
@@ -146,8 +113,7 @@ def build_element_to_plugin_map_from_plugins() -> dict[str, Path]:
             proc = subprocess.run(
                 ["gst-inspect-1.0", str(plugin_path)],
                 text=True,
-                capture_output=True,
-                env=_clean_gst_env()
+                capture_output=True
             )
             
             if proc.returncode != 0:
